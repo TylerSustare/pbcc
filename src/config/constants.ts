@@ -29,6 +29,10 @@ export const CHURCH_INFO = {
     'Sunday: 8:30 AM - Early Service',
     'Sunday: 10:30 AM - Traditional Service',
     'Sunday: 11:30 AM - Contemporary Service',
+  ],
+
+  // Bible study is in-person only (not live streamed)
+  inPersonOnly: [
     'Wednesday: 7:00 PM - Bible Study',
   ],
 

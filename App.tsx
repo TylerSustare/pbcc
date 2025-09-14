@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -11,11 +11,89 @@ import {
 } from 'react-native';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
+import * as ExpoLinking from 'expo-linking';
+import * as Notifications from 'expo-notifications';
 import { BRAND_COLORS, CHURCH_INFO } from './src/config/constants';
 import LiveScreen from './src/screens/LiveScreen';
+import { NotificationService } from './src/services/NotificationService';
+import { ScheduledNotifications } from './src/services/ScheduledNotifications';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<'home' | 'live'>('home');
+
+  useEffect(() => {
+    // Initialize notifications
+    initializeNotifications();
+
+    // Handle deep links
+    const handleDeepLink = (url: string) => {
+      if (url.includes('live')) {
+        setCurrentView('live');
+      }
+    };
+
+    // Handle initial URL if app was opened from notification
+    ExpoLinking.getInitialURL().then((url) => {
+      if (url) {
+        handleDeepLink(url);
+      }
+    });
+
+    // Listen for deep links while app is running
+    const subscription = ExpoLinking.addEventListener('url', (event) => {
+      handleDeepLink(event.url);
+    });
+
+    // Listen for notification responses
+    const notificationSubscription = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        const data = response.notification.request.content.data;
+        if (data?.type === 'live_stream' || data?.type === 'scheduled_service') {
+          setCurrentView('live');
+        }
+      }
+    );
+
+    return () => {
+      subscription?.remove();
+      notificationSubscription.remove();
+    };
+  }, []);
+
+  const initializeNotifications = async () => {
+    try {
+      // Check if we already have permission
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+
+      if (existingStatus !== 'granted') {
+        // Show custom explanation before requesting permissions
+        Alert.alert(
+          'Service Reminders',
+          'Get notified when Sunday services and Bible study begin. You can disable these anytime in Settings.',
+          [
+            {
+              text: 'Not Now',
+              style: 'cancel',
+            },
+            {
+              text: 'Enable Reminders',
+              onPress: async () => {
+                const hasPermission = await NotificationService.requestPermissions();
+                if (hasPermission) {
+                  await ScheduledNotifications.scheduleServiceNotifications();
+                }
+              },
+            },
+          ]
+        );
+      } else {
+        // Already have permission, just schedule notifications
+        await ScheduledNotifications.scheduleServiceNotifications();
+      }
+    } catch (error) {
+      console.error('Failed to initialize notifications:', error);
+    }
+  };
 
   const callChurch = () => {
     Linking.openURL(`tel:${CHURCH_INFO.phone}`);

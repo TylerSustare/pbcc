@@ -24,7 +24,7 @@ const LiveScreen: React.FC<LiveScreenProps> = ({ onBack }) => {
   }, []);
 
   const checkLiveStream = async () => {
-    if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY === 'YOUR_YOUTUBE_API_KEY_HERE') {
+    if (!YOUTUBE_API_KEY) {
       setLoading(false);
       return;
     }
