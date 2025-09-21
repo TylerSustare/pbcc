@@ -13,15 +13,25 @@ import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import * as ExpoLinking from "expo-linking";
 import * as Notifications from "expo-notifications";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BRAND_COLORS, CHURCH_INFO } from "./src/config/constants";
 import LiveScreen from "./src/screens/LiveScreen";
 import { NotificationService } from "./src/services/NotificationService";
 import { ScheduledNotifications } from "./src/services/ScheduledNotifications";
 
+// Storage keys for notification dismissal tracking
+const NOTIFICATION_DISMISSAL_KEY = "notificationDismissalTimestamp";
+const NOTIFICATION_NEVER_ASK_KEY = "notificationNeverAskAgain";
+const SERVICE_PREFERENCES_KEY = "serviceNotificationPreferences";
+
+// Re-prompt after 2 weeks (14 days)
+const REPROMPT_DELAY_MS = 14 * 24 * 60 * 60 * 1000;
+
 export default function App() {
   const [currentView, setCurrentView] = useState<"home" | "live" | "give">(
     "home"
   );
+  const [isLiveInLandscape, setIsLiveInLandscape] = useState(false);
 
   useEffect(() => {
     // Initialize notifications
@@ -73,27 +83,51 @@ export default function App() {
         await Notifications.getPermissionsAsync();
 
       if (existingStatus !== "granted") {
-        // Show custom explanation before requesting permissions
-        Alert.alert(
-          "Service Reminders",
-          "Get notified when Sunday services and Bible study begin. You can disable these anytime in Settings.",
-          [
-            {
-              text: "Not Now",
-              style: "cancel",
-            },
-            {
-              text: "Enable Reminders",
-              onPress: async () => {
-                const hasPermission =
-                  await NotificationService.requestPermissions();
-                if (hasPermission) {
-                  await ScheduledNotifications.scheduleServiceNotifications();
-                }
+        // Check if user has permanently declined or if enough time has passed
+        const shouldAskForNotifications = await shouldPromptForNotifications();
+
+        if (shouldAskForNotifications) {
+          // Show custom explanation before requesting permissions
+          Alert.alert(
+            "Service Reminders",
+            "Get notified when Sunday services and Bible study begin. You can disable these anytime in Settings.",
+            [
+              {
+                text: "Not Now",
+                style: "cancel",
+                onPress: async () => {
+                  // Save dismissal timestamp
+                  await AsyncStorage.setItem(
+                    NOTIFICATION_DISMISSAL_KEY,
+                    Date.now().toString()
+                  );
+                },
               },
-            },
-          ]
-        );
+              {
+                text: "Don't Ask Again",
+                style: "destructive",
+                onPress: async () => {
+                  // Mark as never ask again
+                  await AsyncStorage.setItem(NOTIFICATION_NEVER_ASK_KEY, "true");
+                },
+              },
+              {
+                text: "Enable Reminders",
+                onPress: async () => {
+                  const hasPermission =
+                    await NotificationService.requestPermissions();
+                  if (hasPermission) {
+                    // Show service selection after getting permission
+                    await showServiceSelectionPrompt();
+                    // Clear any dismissal tracking since they accepted
+                    await AsyncStorage.removeItem(NOTIFICATION_DISMISSAL_KEY);
+                    await AsyncStorage.removeItem(NOTIFICATION_NEVER_ASK_KEY);
+                  }
+                },
+              },
+            ]
+          );
+        }
       } else {
         // Already have permission, just schedule notifications
         await ScheduledNotifications.scheduleServiceNotifications();
@@ -102,6 +136,121 @@ export default function App() {
       console.error("Failed to initialize notifications:", error);
     }
   };
+
+  const shouldPromptForNotifications = async (): Promise<boolean> => {
+    try {
+      // Check if user has permanently declined
+      const neverAskAgain = await AsyncStorage.getItem(NOTIFICATION_NEVER_ASK_KEY);
+      if (neverAskAgain === "true") {
+        return false;
+      }
+
+      // Check if enough time has passed since last dismissal
+      const lastDismissalStr = await AsyncStorage.getItem(NOTIFICATION_DISMISSAL_KEY);
+      if (lastDismissalStr) {
+        const lastDismissal = parseInt(lastDismissalStr);
+        const timeSinceDismissal = Date.now() - lastDismissal;
+
+        // Only prompt again if 2 weeks have passed
+        return timeSinceDismissal >= REPROMPT_DELAY_MS;
+      }
+
+      // First time, should prompt
+      return true;
+    } catch (error) {
+      console.error("Error checking notification prompt status:", error);
+      return true; // Default to prompting if there's an error
+    }
+  };
+
+  const showServiceSelectionPrompt = async () => {
+    Alert.alert(
+      "Choose Your Reminders",
+      "Which Sunday services would you like to be reminded about?",
+      [
+        {
+          text: "All Sunday Services",
+          onPress: async () => {
+            const preferences = {
+              earlyService: true,
+              traditionalService: true,
+              contemporaryService: true,
+            };
+            await saveServicePreferences(preferences);
+            await ScheduledNotifications.scheduleServiceNotifications(preferences);
+          },
+        },
+        {
+          text: "Pick One Service",
+          onPress: () => showIndividualServiceSelection(),
+        },
+      ]
+    );
+  };
+
+  const showIndividualServiceSelection = () => {
+    Alert.alert(
+      "Pick Your Service",
+      "Choose which Sunday service you'd like reminders for:",
+      [
+        {
+          text: "Early Service (8:30 AM)",
+          onPress: async () => {
+            const preferences = {
+              earlyService: true,
+              traditionalService: false,
+              contemporaryService: false,
+            };
+            await saveServicePreferences(preferences);
+            await ScheduledNotifications.scheduleServiceNotifications(preferences);
+          },
+        },
+        {
+          text: "Traditional Service (10:30 AM)",
+          onPress: async () => {
+            const preferences = {
+              earlyService: false,
+              traditionalService: true,
+              contemporaryService: false,
+            };
+            await saveServicePreferences(preferences);
+            await ScheduledNotifications.scheduleServiceNotifications(preferences);
+          },
+        },
+        {
+          text: "Contemporary Service (11:30 AM)",
+          onPress: async () => {
+            const preferences = {
+              earlyService: false,
+              traditionalService: false,
+              contemporaryService: true,
+            };
+            await saveServicePreferences(preferences);
+            await ScheduledNotifications.scheduleServiceNotifications(preferences);
+          },
+        },
+      ]
+    );
+  };
+
+  const saveServicePreferences = async (preferences: {
+    earlyService: boolean;
+    traditionalService: boolean;
+    contemporaryService: boolean;
+  }) => {
+    try {
+      await AsyncStorage.setItem(SERVICE_PREFERENCES_KEY, JSON.stringify(preferences));
+    } catch (error) {
+      console.error("Error saving service preferences:", error);
+    }
+  };
+
+  // Helper function for testing - uncomment to reset notification prompts
+  // const resetNotificationPrompts = async () => {
+  //   await AsyncStorage.removeItem(NOTIFICATION_DISMISSAL_KEY);
+  //   await AsyncStorage.removeItem(NOTIFICATION_NEVER_ASK_KEY);
+  //   console.log("Notification prompts reset - app will prompt again on next launch");
+  // };
 
   const callChurch = () => {
     Linking.openURL(`tel:${CHURCH_INFO.phone}`);
@@ -143,20 +292,22 @@ export default function App() {
         />
 
         {/* Header with native actions */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Powell Butte Church</Text>
-          <View style={styles.headerButtons}>
-            <TouchableOpacity style={styles.headerButton} onPress={callChurch}>
-              <Text style={styles.headerButtonText}>📞</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.headerButton} onPress={emailChurch}>
-              <Text style={styles.headerButtonText}>✉️</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.headerButton} onPress={shareChurch}>
-              <Text style={styles.headerButtonText}>📤</Text>
-            </TouchableOpacity>
+        {!isLiveInLandscape && (
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>Powell Butte Church</Text>
+            <View style={styles.headerButtons}>
+              <TouchableOpacity style={styles.headerButton} onPress={callChurch}>
+                <Text style={styles.headerButtonText}>📞</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.headerButton} onPress={emailChurch}>
+                <Text style={styles.headerButtonText}>✉️</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.headerButton} onPress={shareChurch}>
+                <Text style={styles.headerButtonText}>📤</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        )}
 
         {/* Main content */}
         {currentView === "home" ? (
@@ -169,7 +320,7 @@ export default function App() {
             domStorageEnabled={true}
           />
         ) : currentView === "live" ? (
-          <LiveScreen onBack={showWebsite} />
+          <LiveScreen onBack={showWebsite} onLandscapeChange={setIsLiveInLandscape} />
         ) : (
           <WebView
             source={{ uri: "https://pushpay.com/g/thenetministry?src=hpp" }}
@@ -182,7 +333,8 @@ export default function App() {
         )}
 
         {/* Bottom navigation */}
-        <View style={styles.bottomNav}>
+        {!isLiveInLandscape && (
+          <View style={styles.bottomNav}>
           <TouchableOpacity
             style={[
               styles.navButton,
@@ -232,6 +384,7 @@ export default function App() {
             </Text>
           </TouchableOpacity>
         </View>
+        )}
       </SafeAreaView>
     </SafeAreaProvider>
   );

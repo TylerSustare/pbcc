@@ -1,15 +1,71 @@
 import * as Notifications from 'expo-notifications';
 import { CHURCH_INFO } from '../config/constants';
 
+interface ServicePreferences {
+  earlyService: boolean;
+  traditionalService: boolean;
+  contemporaryService: boolean;
+}
+
 export class ScheduledNotifications {
-  static async scheduleServiceNotifications(): Promise<void> {
+  static async scheduleServiceNotifications(preferences?: ServicePreferences): Promise<void> {
     // Cancel any existing scheduled notifications first
     await Notifications.cancelAllScheduledNotificationsAsync();
 
-    // Schedule Sunday service notifications only
-    await this.scheduleSundayNotifications();
+    // If no preferences provided, schedule all Sunday services (backward compatibility)
+    if (!preferences) {
+      await this.scheduleSundayNotifications();
+    } else {
+      // Schedule based on user preferences
+      await this.scheduleSelectedServices(preferences);
+    }
 
-    console.log('Sunday service notifications scheduled successfully');
+    console.log('Service notifications scheduled successfully');
+  }
+
+  private static async scheduleSelectedServices(preferences: ServicePreferences): Promise<void> {
+    const services = [
+      {
+        enabled: preferences.earlyService,
+        hour: 8, minute: 30, name: 'Early Service'
+      },
+      {
+        enabled: preferences.traditionalService,
+        hour: 10, minute: 30, name: 'Traditional Service'
+      },
+      {
+        enabled: preferences.contemporaryService,
+        hour: 11, minute: 30, name: 'Contemporary Service'
+      }
+    ];
+
+    for (const service of services) {
+      if (service.enabled) {
+        // Calculate next Sunday occurrence
+        const nextOccurrence = this.getNextWeekdayOccurrence(0, service.hour, service.minute);
+
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: `🔴 ${service.name} Starting Now!`,
+            body: `${CHURCH_INFO.shortName} is live. Tap to watch the service.`,
+            data: {
+              type: 'scheduled_service',
+              deepLink: 'pbcc://live',
+              serviceName: service.name
+            },
+            sound: true,
+            priority: Notifications.AndroidNotificationPriority.HIGH,
+          },
+          trigger: {
+            date: nextOccurrence,
+            repeats: true,
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+          },
+        });
+
+        console.log(`Scheduled ${service.name} notification for ${nextOccurrence.toLocaleString()}`);
+      }
+    }
   }
 
   private static async scheduleSundayNotifications(): Promise<void> {
