@@ -8,8 +8,7 @@ import {
   Linking,
   Dimensions,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
-import * as ScreenOrientation from 'expo-screen-orientation';
+import YoutubePlayer from 'react-native-youtube-iframe';
 import { YOUTUBE_CHANNEL_ID, YOUTUBE_API_KEY, BRAND_COLORS, CHURCH_INFO } from '../config/constants';
 
 interface LiveScreenProps {
@@ -21,109 +20,56 @@ const LiveScreen: React.FC<LiveScreenProps> = ({ onBack, onLandscapeChange }) =>
   const [isLive, setIsLive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [liveVideoId, setLiveVideoId] = useState<string | null>(null);
-  const [webViewError, setWebViewError] = useState<string | null>(null);
-  const [isLandscape, setIsLandscape] = useState(false);
-  const [retryAttempts, setRetryAttempts] = useState(0);
-  const [isRetrying, setIsRetrying] = useState(false);
-  const [webViewKey, setWebViewKey] = useState(0);
-
-  const getYouTubeHTML = (videoId: string) => {
-    return `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-        <style>
-          html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            background: #000;
-            overflow: hidden;
-          }
-          iframe {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            border: none;
-          }
-        </style>
-      </head>
-      <body>
-        <iframe
-          src="https://www.youtube.com/embed/${videoId}?autoplay=1&playsinline=1&controls=1&modestbranding=1&rel=0"
-          frameborder="0"
-          allow="autoplay; encrypted-media; picture-in-picture; accelerometer; gyroscope"
-          allowfullscreen>
-        </iframe>
-      </body>
-    </html>
-    `;
-  };
+  const [playerError, setPlayerError] = useState<string | null>(null);
+  const [dimensions, setDimensions] = useState({
+    width: Dimensions.get('window').width,
+    height: Dimensions.get('window').height,
+  });
 
   useEffect(() => {
     checkLiveStream();
 
-    // Track orientation changes
-    const updateLayout = () => {
+    // Track dimension changes for responsive player
+    const updateDimensions = () => {
       const { width, height } = Dimensions.get('window');
-      const landscape = width > height;
-      setIsLandscape(landscape);
-      onLandscapeChange?.(landscape && isLive && liveVideoId && !webViewError);
+      setDimensions({ width, height });
     };
 
-    // Initial check
-    updateLayout();
-
     // Listen for orientation changes
-    const subscription = Dimensions.addEventListener('change', updateLayout);
+    const subscription = Dimensions.addEventListener('change', updateDimensions);
 
     return () => {
       subscription?.remove();
     };
   }, []);
 
-  useEffect(() => {
-    // Set landscape orientation when live video is playing
-    if (isLive && liveVideoId && !webViewError) {
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-    }
-
-    // Notify parent about landscape state
-    onLandscapeChange?.(isLandscape && isLive && liveVideoId && !webViewError);
-
-    // Cleanup function to reset orientation when component unmounts or live ends
-    return () => {
-      ScreenOrientation.unlockAsync();
-      onLandscapeChange?.(false);
-    };
-  }, [isLive, liveVideoId, webViewError, isLandscape]);
-
   const checkLiveStream = async () => {
     if (!YOUTUBE_API_KEY) {
+      console.log('[LiveScreen] No YouTube API key configured');
       setLoading(false);
       return;
     }
 
     try {
+      console.log('[LiveScreen] Checking for live stream...');
       const response = await fetch(
         `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${YOUTUBE_CHANNEL_ID}&eventType=live&type=video&key=${YOUTUBE_API_KEY}`
       );
       const data = await response.json();
 
+      console.log('[LiveScreen] API Response:', JSON.stringify(data, null, 2));
+
       if (data.items && data.items.length > 0) {
         const videoId = data.items[0].id.videoId;
+        console.log('[LiveScreen] Live stream found! Video ID:', videoId);
         setIsLive(true);
         setLiveVideoId(videoId);
-        // Reset retry attempts for new video
-        setRetryAttempts(0);
-        setWebViewError(null);
+        setPlayerError(null);
+      } else {
+        console.log('[LiveScreen] No live stream found');
       }
     } catch (error) {
-      console.error('Error checking live stream:', error);
+      console.error('[LiveScreen] Error checking live stream:', error);
     }
 
     setLoading(false);
@@ -137,32 +83,20 @@ const LiveScreen: React.FC<LiveScreenProps> = ({ onBack, onLandscapeChange }) =>
   };
 
   const handleBack = () => {
-    ScreenOrientation.unlockAsync();
     onBack();
   };
 
-  const retryConnection = async (errorMessage: string) => {
-    const maxRetries = 3;
-    const retryDelays = [500, 1000, 2000]; // milliseconds
+  const onPlayerReady = () => {
+    console.log('[LiveScreen] YouTube player ready');
+  };
 
-    if (retryAttempts < maxRetries) {
-      setIsRetrying(true);
-      const delay = retryDelays[retryAttempts];
+  const onPlayerError = (error: string) => {
+    console.error('[LiveScreen] YouTube Player Error:', error);
+    setPlayerError(`Unable to load video: ${error}`);
+  };
 
-      console.log(`Retry attempt ${retryAttempts + 1}/${maxRetries} after ${delay}ms`);
-
-      setTimeout(() => {
-        setRetryAttempts(prev => prev + 1);
-        setWebViewError(null);
-        setIsRetrying(false);
-        // Force WebView to reload by changing key
-        setWebViewKey(prev => prev + 1);
-      }, delay);
-    } else {
-      // After 3 failed attempts, show the error
-      setWebViewError(errorMessage);
-      setIsRetrying(false);
-    }
+  const onPlaybackStateChange = (state: string) => {
+    console.log('[LiveScreen] Playback state changed:', state);
   };
 
 
@@ -178,18 +112,18 @@ const LiveScreen: React.FC<LiveScreenProps> = ({ onBack, onLandscapeChange }) =>
   }
 
   if (isLive && liveVideoId) {
-    if (webViewError) {
+    console.log('[LiveScreen] Rendering player - videoId:', liveVideoId);
+
+    if (playerError) {
       return (
         <View style={styles.container}>
           <View style={styles.errorContainer}>
             <Text style={styles.errorTitle}>🚫 Video Load Error</Text>
-            <Text style={styles.errorMessage}>{webViewError}</Text>
+            <Text style={styles.errorMessage}>{playerError}</Text>
             <TouchableOpacity
               style={styles.retryButton}
               onPress={() => {
-                setWebViewError(null);
-                setRetryAttempts(0);
-                setWebViewKey(prev => prev + 1);
+                setPlayerError(null);
                 checkLiveStream();
               }}
             >
@@ -204,45 +138,27 @@ const LiveScreen: React.FC<LiveScreenProps> = ({ onBack, onLandscapeChange }) =>
     }
 
     return (
-      <View style={styles.container}>
-        <WebView
-          key={webViewKey}
-          source={{ html: getYouTubeHTML(liveVideoId) }}
-          style={styles.webview}
-          originWhitelist={['*']}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
-          allowsInlineMediaPlayback={true}
-          mediaPlaybackRequiresUserAction={false}
-          allowsFullscreenVideo={true}
-          mixedContentMode="always"
-          startInLoadingState={true}
-          renderLoading={() => (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={BRAND_COLORS.primary} />
-              <Text style={styles.loadingText}>
-                {isRetrying ? `Retrying connection... (${retryAttempts}/3)` : 'Loading live stream...'}
-              </Text>
-            </View>
-          )}
-          onError={(syntheticEvent) => {
-            const { nativeEvent } = syntheticEvent;
-            console.error('WebView error: ', nativeEvent);
-            const errorMessage = `WebView Error: ${nativeEvent.description || 'Unknown error'} (Code: ${nativeEvent.code || 'N/A'})`;
-            retryConnection(errorMessage);
+      <View style={styles.playerContainer}>
+        <YoutubePlayer
+          height={dimensions.height}
+          width={dimensions.width}
+          videoId={liveVideoId}
+          play={true}
+          initialPlayerParams={{
+            controls: true,
+            modestbranding: true,
+            autoplay: 1,
+            playsinline: 0,
+            fs: 1,
           }}
-          onHttpError={(syntheticEvent) => {
-            const { nativeEvent } = syntheticEvent;
-            console.error('WebView HTTP error: ', nativeEvent);
-            const errorMessage = `HTTP Error: ${nativeEvent.statusCode} - ${nativeEvent.description || 'Network error'}`;
-            retryConnection(errorMessage);
-          }}
-          onLoadEnd={(syntheticEvent) => {
-            const { nativeEvent } = syntheticEvent;
-            if (!nativeEvent.loading && nativeEvent.url.includes('error')) {
-              const errorMessage = `Page Load Error: Unable to load video content`;
-              retryConnection(errorMessage);
-            }
+          forceAndroidAutoplay={true}
+          onReady={onPlayerReady}
+          onError={onPlayerError}
+          onChangeState={onPlaybackStateChange}
+          webViewStyle={styles.player}
+          webViewProps={{
+            androidLayerType: 'hardware',
+            allowsFullscreenVideo: true,
           }}
         />
       </View>
@@ -278,6 +194,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: BRAND_COLORS.background,
   },
+  playerContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -288,8 +208,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: BRAND_COLORS.textLight,
   },
-  webview: {
+  player: {
     flex: 1,
+    backgroundColor: '#000',
   },
   errorContainer: {
     flex: 1,
@@ -344,6 +265,23 @@ const styles = StyleSheet.create({
   },
   landscapeButtonText: {
     fontSize: 16,
+  },
+  backButton: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  backButtonText: {
+    color: 'white',
+    fontSize: 24,
+    fontWeight: '600',
   },
   openAppText: {
     color: 'white',
