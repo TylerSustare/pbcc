@@ -21,26 +21,11 @@ const LiveScreen: React.FC<LiveScreenProps> = ({ onBack, onLandscapeChange }) =>
   const [loading, setLoading] = useState(true);
   const [liveVideoId, setLiveVideoId] = useState<string | null>(null);
   const [playerError, setPlayerError] = useState<string | null>(null);
-  const [dimensions, setDimensions] = useState({
-    width: Dimensions.get('window').width,
-    height: Dimensions.get('window').height,
-  });
+  const screenWidth = Dimensions.get('window').width;
+  const playerHeight = screenWidth * (9 / 16); // 16:9 aspect ratio
 
   useEffect(() => {
     checkLiveStream();
-
-    // Track dimension changes for responsive player
-    const updateDimensions = () => {
-      const { width, height } = Dimensions.get('window');
-      setDimensions({ width, height });
-    };
-
-    // Listen for orientation changes
-    const subscription = Dimensions.addEventListener('change', updateDimensions);
-
-    return () => {
-      subscription?.remove();
-    };
   }, []);
 
   const checkLiveStream = async () => {
@@ -139,28 +124,20 @@ const LiveScreen: React.FC<LiveScreenProps> = ({ onBack, onLandscapeChange }) =>
 
     return (
       <View style={styles.playerContainer}>
-        <YoutubePlayer
-          height={dimensions.height}
-          width={dimensions.width}
-          videoId={liveVideoId}
-          play={true}
-          initialPlayerParams={{
-            controls: true,
-            modestbranding: true,
-            autoplay: 1,
-            playsinline: 0,
-            fs: 1,
-          }}
-          forceAndroidAutoplay={true}
-          onReady={onPlayerReady}
-          onError={onPlayerError}
-          onChangeState={onPlaybackStateChange}
-          webViewStyle={styles.player}
-          webViewProps={{
-            androidLayerType: 'hardware',
-            allowsFullscreenVideo: true,
-          }}
-        />
+        <View style={{ width: screenWidth, height: playerHeight }}>
+          <YoutubePlayer
+            height={playerHeight}
+            videoId={liveVideoId}
+            play={false}
+            onReady={onPlayerReady}
+            onError={onPlayerError}
+            onChangeState={onPlaybackStateChange}
+            webViewStyle={styles.player}
+            webViewProps={{
+              androidLayerType: 'hardware',
+            }}
+          />
+        </View>
       </View>
     );
   }
@@ -197,6 +174,8 @@ const styles = StyleSheet.create({
   playerContainer: {
     flex: 1,
     backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   loadingContainer: {
     flex: 1,
