@@ -35,10 +35,10 @@ test: ## Run unit tests
 run: ## Run the app
 	$(FLUTTER) run
 
-build-apk: ## Build Android APK
+build-android: ## Build Android APK
 	$(FLUTTER) build apk --split-per-abi
 
-build-ios: ## Build iOS app
+build-ios: ## Build iOS app bundle
 	$(FLUTTER) build ios --no-codesign
 
 icons: ## Generate launcher icons
