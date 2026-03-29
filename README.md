@@ -1,72 +1,76 @@
-# Powell Butte Christian Church Mobile App
+# PBCC (Powell Butte Christian Church) Mobile App
 
-A React Native church app built with Expo that displays the church's website in a WebView with native mobile features.
+This is the mobile application for **Powell Butte Christian Church**, ported from React Native to **Flutter** for enhanced performance, native feel, and maintainability.
 
-## Quick Start
+## 🛠️ Tech Stack & Requirements
 
+- **Framework:** [Flutter](https://flutter.dev/) (using SDK version 3.41.5)
+- **SDK Management:** [FVM (Flutter Version Management)](https://fvm.app/)
+- **State Management:** `StatefulWidget` (minimal state approach for simplicity)
+- **Native Bridges:** 
+  - `webview_flutter` for the main website and giving page.
+  - `youtube_player_flutter` for the live stream screen.
+  - `flutter_local_notifications` for Sunday service reminders.
+
+## 🚀 Getting Started
+
+This project **requires** `fvm` for all Flutter and Dart workflows to ensure version consistency.
+
+### 1. Initial Setup
+
+If you haven't installed `fvm`, you can do so via `pub`:
 ```bash
-# Install dependencies
-pnpm install
-
-# Start development server
-pnpm start
-
-# Run on device
-pnpm run ios     # iOS
-pnpm run android # Android
+dart pub global activate fvm
 ```
 
-## Sharing the App
-
-### For Quick Testing (Easiest)
+Then, initialize the project:
 ```bash
-# Start dev server
-pnpm start
-
-# Share the QR code with testers
-# They download "Expo Go" from App Store and scan your QR code
+make dev-setup
 ```
 
-### For Direct Installation
-```bash
-# Android APK (works on any Android device)
-pnpm run build:android
+### 2. Common Commands
 
-# iOS Development Build (requires adding device UUIDs)
-pnpm run build:dev --platform ios
+We've abstracted the complex `fvm flutter` commands into a simple `Makefile`.
+
+| Command | Description |
+|---------|-------------|
+| `make help` | Show all available commands |
+| `make get` | Fetch dependencies |
+| `make run` | Launch the app in debug mode |
+| `make analyze` | Run the static analyzer |
+| `make test` | Run unit and widget tests |
+| `make icons` | Regenerate launcher icons |
+| `make splash` | Regenerate splash screens |
+| `make build-apk` | Build a production Android APK |
+| `make build-ios` | Build a production iOS bundle |
+
+## 📁 Project Structure
+
+```text
+pbcc/
+├── lib/
+│   ├── config/        # App-wide constants (colors, links, service times)
+│   ├── screens/       # Main UI screens (Home, Live, etc.)
+│   ├── services/      # Business logic (Notifications, YouTube API)
+│   └── main.dart      # App entry point and deep link handling
+├── assets/            # App icons, logos, and splash screen images
+├── test/              # Unit and widget tests
+├── Makefile           # Dev-tooling abstraction
+└── TODO.md            # Plan for Version 2 (Native Content Migration)
 ```
 
-### For App Store Distribution
-```bash
-# Configure EAS (first time only)
-pnpm run build:configure
+## 🗓️ Features
 
-# Build for production
-pnpm run build:ios
+- **Home Screen:** Live WebView of the church's primary website.
+- **Live Stream:** Automatically detects and displays active YouTube live streams during service times.
+- **Service Reminders:** Optional push notifications for Sunday services (8:30 AM, 10:30 AM, 11:30 AM).
+- **Giving:** Native navigation to the church's secure Giving page.
+- **Deep Linking:** Supports `PBCC://live` and `PBCC://give` schemes.
 
-# Submit to TestFlight/App Store
-pnpm run submit:ios
-```
+## 🔮 Version 2: Native Migration
 
-## Requirements
+The next phase of this project is to replace the WebViews with a fully native UI by scraping `powellbuttechurch.com` via a cloud-hosted API. See [TODO.md](./TODO.md) for the detailed roadmap.
 
-- **Development**: Node.js, pnpm, Expo CLI
-- **iOS Builds**: Apple Developer Account ($99/year)
-- **Android Builds**: Free (Google Play Console for store distribution)
+---
 
-## App Features
-
-- **Home Tab**: Church website in WebView
-- **Live Tab**: YouTube live stream detection and embedding
-- **Native Features**: Phone, email, share buttons
-- **Notifications**: Automatic service reminders
-
-## Configuration
-
-Update `src/config/constants.js`:
-- Replace `YOUR_YOUTUBE_API_KEY_HERE` with real YouTube API key
-- Verify church contact info and service times
-
-## Architecture
-
-Simple hybrid approach using WebView for existing content with minimal native features for App Store compliance.
+*Originally migrated from React Native in March 2026.*
